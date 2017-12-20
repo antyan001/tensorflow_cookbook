@@ -59,25 +59,25 @@ if not os.path.isfile(os.path.join(data_dir, data_file)):
   response = requests.get(shakespeare_url)
   shakespeare_file = response.content
   # Decode binary into string
-  s_text = shakespeare_file.decode('utf-8')
+  input_text = shakespeare_file.decode('utf-8')
   # Drop first few descriptive paragraphs.
-  s_text = s_text[7675:]
+  input_text = input_text[7675:]
   # Remove newlines
-  s_text = s_text.replace('\r\n', '')
-  s_text = s_text.replace('\n', '')
+  input_text = input_text.replace('\r\n', '')
+  input_text = input_text.replace('\n', '')
 
   # Write to file
   with open(os.path.join(data_dir, data_file), 'w') as out_conn:
-    out_conn.write(s_text)
+    out_conn.write(input_text)
 else:
   # If file has been saved, load from that file
   with open(os.path.join(data_dir, data_file), 'r') as file_conn:
-    s_text = file_conn.read().replace('\n', '')
+    input_text = file_conn.read().replace('\n', '')
 
 # Clean text
 print('Cleaning Text')
-s_text = re.sub(r'[{}]'.format(punctuation), ' ', s_text)
-s_text = re.sub('\s+', ' ', s_text).strip().lower()
+input_text = re.sub(r'[{}]'.format(punctuation), ' ', input_text)
+input_text = re.sub('\s+', ' ', input_text).strip().lower()
 
 # Build word vocabulary function
 def build_vocab(text, min_word_freq):
@@ -95,14 +95,14 @@ def build_vocab(text, min_word_freq):
 
 # Build Shakespeare vocabulary
 print('Building Shakespeare Vocab')
-ix2vocab, vocab2ix = build_vocab(s_text, min_word_freq)
+ix2vocab, vocab2ix = build_vocab(input_text, min_word_freq)
 vocab_size = len(ix2vocab) + 1
 print('Vocabulary Length = {}'.format(vocab_size))
 # Sanity Check
 assert (len(ix2vocab) == len(vocab2ix))
 
 # Convert text to word vectors
-s_text_words = s_text.split(' ')
+s_text_words = input_text.split(' ')
 s_text_ix = []
 for ix, x in enumerate(s_text_words):
   try:
@@ -129,11 +129,11 @@ class LSTM_Model():
       self.batch_size = batch_size
       self.training_seq_len = training_seq_len
 
-    self.lstm_cell = tf.contrib.rnn.BasicLSTMCell(self.rnn_size)
-    self.initial_state = self.lstm_cell.zero_state(self.batch_size, tf.float32)
-
     self.x_data = tf.placeholder(tf.int32, [self.batch_size, self.training_seq_len])
     self.y_output = tf.placeholder(tf.int32, [self.batch_size, self.training_seq_len])
+
+    self.lstm_cell = tf.contrib.rnn.BasicLSTMCell(self.rnn_size)
+    self.initial_state = self.lstm_cell.zero_state(self.batch_size, tf.float32)
 
     with tf.variable_scope('lstm_vars'):
       # Softmax Output Weights
@@ -157,7 +157,7 @@ class LSTM_Model():
       prev_symbol = tf.stop_gradient(tf.argmax(prev_transformed, 1))
       # Get embedded vector
       output = tf.nn.embedding_lookup(embedding_mat, prev_symbol)
-      return (output)
+      return output
 
     decoder = tf.contrib.legacy_seq2seq.rnn_decoder
     outputs, last_state = decoder(rnn_inputs_trimmed,
@@ -239,13 +239,13 @@ with tf.Session() as sess:
     # Reset initial LSTM state every epoch
     state = sess.run(lstm_model.initial_state)
     for ix, batch in enumerate(batches):
-      training_dict = {lstm_model.x_data: batch, lstm_model.y_output: targets[ix]}
+      feed_dict = {lstm_model.x_data: batch, lstm_model.y_output: targets[ix]}
       c, h = lstm_model.initial_state
-      training_dict[c] = state.c
-      training_dict[h] = state.h
+      feed_dict[c] = state.c
+      feed_dict[h] = state.h
 
       temp_loss, state, _ = sess.run([lstm_model.cost, lstm_model.final_state, lstm_model.train_op],
-                                     feed_dict=training_dict)
+                                     feed_dict=feed_dict)
       train_loss.append(temp_loss)
 
       # Print status every 10 gens
