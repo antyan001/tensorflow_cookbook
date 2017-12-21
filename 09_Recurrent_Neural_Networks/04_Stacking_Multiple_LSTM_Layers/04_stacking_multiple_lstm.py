@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 #
 # Stacking LSTM Layers
@@ -7,21 +8,20 @@
 #  of Shakespearean language.  We will also use characters instead of words.
 #
 
+from __future__ import print_function
+
+import collections
 import os
+import pickle
+import random
 import re
 import string
-import requests
-import numpy as np
-import collections
-import random
-import pickle
-import matplotlib.pyplot as plt
-import tensorflow as tf
-from tensorflow.python.framework import ops
-ops.reset_default_graph()
 
-# Start a session
-sess = tf.Session()
+import matplotlib.pyplot as plt
+import numpy as np
+import requests
+import tensorflow as tf
+
 
 # Set RNN Parameters
 num_layers = 3 # Number of RNN layers stacked
@@ -34,6 +34,7 @@ training_seq_len = 50 # how long of a word group to consider
 save_every = 500 # How often to save model checkpoints
 eval_every = 50 # How often to evaluate the test sentences
 prime_texts = ['thou art more', 'to be or not to', 'wherefore art thou']
+
 
 # Download/store Shakespeare data
 data_dir = 'temp'
@@ -132,11 +133,7 @@ class LSTM_Model():
         else:
             self.batch_size = batch_size
             self.training_seq_len = training_seq_len
-        
-        self.lstm_cell = tf.contrib.rnn.BasicLSTMCell(rnn_size)
-        self.lstm_cell = tf.contrib.rnn.MultiRNNCell([self.lstm_cell for _ in range(self.num_layers)])
-        self.initial_state = self.lstm_cell.zero_state(self.batch_size, tf.float32)
-        
+
         self.x_data = tf.placeholder(tf.int32, [self.batch_size, self.training_seq_len])
         self.y_output = tf.placeholder(tf.int32, [self.batch_size, self.training_seq_len])
         
@@ -152,11 +149,15 @@ class LSTM_Model():
             embedding_output = tf.nn.embedding_lookup(embedding_mat, self.x_data)
             rnn_inputs = tf.split(axis=1, num_or_size_splits=self.training_seq_len, value=embedding_output)
             rnn_inputs_trimmed = [tf.squeeze(x, [1]) for x in rnn_inputs]
+
+        self.lstm_cell = tf.contrib.rnn.BasicLSTMCell(rnn_size)
+        self.lstm_cell = tf.contrib.rnn.MultiRNNCell([self.lstm_cell for _ in range(self.num_layers)])
+        self.initial_state = self.lstm_cell.zero_state(self.batch_size, tf.float32)
         
         decoder = tf.contrib.legacy_seq2seq.rnn_decoder
-        outputs, last_state = decoder(rnn_inputs_trimmed,
-                                      self.initial_state,
-                                      self.lstm_cell)
+        outputs, last_state = decoder(decoder_inputs=rnn_inputs_trimmed,
+                                      initial_state=self.initial_state,
+                                      cell=self.lstm_cell)
         
         # RNN outputs
         output = tf.reshape(tf.concat(axis=1, values=outputs), [-1, rnn_size])
@@ -165,9 +166,9 @@ class LSTM_Model():
         self.model_output = tf.nn.softmax(self.logit_output)
         
         loss_fun = tf.contrib.legacy_seq2seq.sequence_loss_by_example
-        loss = loss_fun([self.logit_output],[tf.reshape(self.y_output, [-1])],
-                [tf.ones([self.batch_size * self.training_seq_len])],
-                self.vocab_size)
+        loss = loss_fun(logits=[self.logit_output],
+                        targets=[tf.reshape(self.y_output, [-1])],
+                        weights=[tf.ones([self.batch_size * self.training_seq_len])])
         self.cost = tf.reduce_sum(loss) / (self.batch_size * self.training_seq_len)
         self.final_state = last_state
         gradients, _ = tf.clip_by_global_norm(tf.gradients(self.cost, tf.trainable_variables()), 4.5)
@@ -195,7 +196,7 @@ class LSTM_Model():
                 break
             char = words[sample]
             out_sentence = out_sentence + char
-        return(out_sentence)
+        return out_sentence
 
 
 # Define LSTM Model
@@ -218,58 +219,53 @@ batches = np.array_split(s_text_ix, num_batches)
 batches = [np.resize(x, [batch_size, training_seq_len]) for x in batches]
 
 # Initialize all variables
-init = tf.global_variables_initializer()
-sess.run(init)
+with tf.Session() as sess:
+  sess.run(tf.global_variables_initializer())
 
-# Train model
-train_loss = []
-iteration_count = 1
-for epoch in range(epochs):
-    # Shuffle word indices
-    random.shuffle(batches)
-    # Create targets from shuffled batches
-    targets = [np.roll(x, -1, axis=1) for x in batches]
-    # Run a through one epoch
-    print('Starting Epoch #{} of {}.'.format(epoch+1, epochs))
-    # Reset initial LSTM state every epoch
-    state = sess.run(lstm_model.initial_state)
-    for ix, batch in enumerate(batches):
-        training_dict = {lstm_model.x_data: batch, lstm_model.y_output: targets[ix]}
-        # We need to update initial state for each RNN cell:
-        for i, (c, h) in enumerate(lstm_model.initial_state):
-                    training_dict[c] = state[i].c
-                    training_dict[h] = state[i].h
-        
-        temp_loss, state, _ = sess.run([lstm_model.cost, lstm_model.final_state, lstm_model.train_op],
-                                       feed_dict=training_dict)
-        train_loss.append(temp_loss)
-        
-        # Print status every 10 gens
-        if iteration_count % 10 == 0:
-            summary_nums = (iteration_count, epoch+1, ix+1, num_batches+1, temp_loss)
-            print('Iteration: {}, Epoch: {}, Batch: {} out of {}, Loss: {:.2f}'.format(*summary_nums))
-        
-        # Save the model and the vocab
-        if iteration_count % save_every == 0:
-            # Save model
-            model_file_name = os.path.join(full_model_dir, 'model')
-            saver.save(sess, model_file_name, global_step = iteration_count)
-            print('Model Saved To: {}'.format(model_file_name))
-            # Save vocabulary
-            dictionary_file = os.path.join(full_model_dir, 'vocab.pkl')
-            with open(dictionary_file, 'wb') as dict_file_conn:
-                pickle.dump([vocab2ix, ix2vocab], dict_file_conn)
-        
-        if iteration_count % eval_every == 0:
-            for sample in prime_texts:
-                print(test_lstm_model.sample(sess, ix2vocab, vocab2ix, num=10, prime_text=sample))
-                
-        iteration_count += 1
+  # Train model
+  train_loss = []
+  iteration_count = 1
+  for epoch in range(epochs):
+      # Shuffle word indices
+      random.shuffle(batches)
+      # Create targets from shuffled batches
+      targets = [np.roll(x, -1, axis=1) for x in batches]
+      # Run a through one epoch
+      print('Starting Epoch #{} of {}.'.format(epoch+1, epochs))
+      # Reset initial LSTM state every epoch
+      state = sess.run(lstm_model.initial_state)
+      for ix, batch in enumerate(batches):
+          training_dict = {lstm_model.x_data: batch, lstm_model.y_output: targets[ix]}
+          # We need to update initial state for each RNN cell:
+          for i, (c, h) in enumerate(lstm_model.initial_state):
+                      training_dict[c] = state[i].c
+                      training_dict[h] = state[i].h
 
-#ydata[:-1] = xdata[1:]
-        #ydata[-1] = xdata[0]
+          temp_loss, state, _ = sess.run([lstm_model.cost, lstm_model.final_state, lstm_model.train_op],
+                                         feed_dict=training_dict)
+          train_loss.append(temp_loss)
 
+          # Print status every 10 gens
+          if iteration_count % 10 == 0:
+              summary_nums = (iteration_count, epoch+1, ix+1, num_batches+1, temp_loss)
+              print('Iteration: {}, Epoch: {}, Batch: {} out of {}, Loss: {:.2f}'.format(*summary_nums))
 
+          # Save the model and the vocab
+          if iteration_count % save_every == 0:
+              # Save model
+              model_file_name = os.path.join(full_model_dir, 'model')
+              saver.save(sess, model_file_name, global_step = iteration_count)
+              print('Model Saved To: {}'.format(model_file_name))
+              # Save vocabulary
+              dictionary_file = os.path.join(full_model_dir, 'vocab.pkl')
+              with open(dictionary_file, 'wb') as dict_file_conn:
+                  pickle.dump([vocab2ix, ix2vocab], dict_file_conn)
+
+          if iteration_count % eval_every == 0:
+              for sample in prime_texts:
+                  print(test_lstm_model.sample(sess, ix2vocab, vocab2ix, num=20, prime_text=sample))
+
+          iteration_count += 1
 
 # Plot loss over time
 plt.plot(train_loss, 'k-')
