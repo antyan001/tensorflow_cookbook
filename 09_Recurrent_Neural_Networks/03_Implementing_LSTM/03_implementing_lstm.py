@@ -149,20 +149,42 @@ class LSTM_Model():
       rnn_inputs_trimmed = [tf.squeeze(x, [1]) for x in rnn_inputs]
 
     # If we are inferring (generating text), we add a 'loop' function
-    # Define how to get the i+1 th input from the i th output
+    # Define how to get the i+1-th input from the i-th output
     def inferred_loop(prev, count):
       # Apply hidden layer
       prev_transformed = tf.matmul(prev, W) + b
       # Get the index of the output (also don't run the gradient)
+      #
+      # About stop_gradient:
+      # https://stackoverflow.com/questions/33727935/how-to-use-stop-gradient-in-tensorflow/33729320#33729320
       prev_symbol = tf.stop_gradient(tf.argmax(prev_transformed, 1))
       # Get embedded vector
       output = tf.nn.embedding_lookup(embedding_mat, prev_symbol)
       return output
 
+    # Notes:
+    # Despite the fancy name, this model is not exactly seq2seq. It's just a cool way to
+    # train and sample an ordinary LSTM layer. Here's how it works:
+    #
+    # - In training, `infer_sample=False`, hence `inferred_loop` is not applied.
+    #   In this case, the input to each cell is coming from `decoder_inputs=rnn_inputs_trimmed`.
+    #   The call is basically equivalent to `static_rnn`.
+    #
+    # - In testing, `inferred_loop` is giving the input to feed to each next cell, overwriting `decoder_inputs`.
+    #   It does the same transformation as logits during training, effectively copying `self.logit_output` op,
+    #   and returning the corresponding word embedding.
+    #
+    #   The outputs will then go through the dense layer once again,
+    #   producing the same words that have been fed to LSTM.
+    #
+    #   Invariant: LSTM output must go through the dense layer before it notes a word.
+    #
+    # One more application of this trick:
+    # https://github.com/sherjilozair/char-rnn-tensorflow/blob/master/model.py
     decoder = tf.contrib.legacy_seq2seq.rnn_decoder
-    outputs, last_state = decoder(rnn_inputs_trimmed,
-                                  self.initial_state,
-                                  self.lstm_cell,
+    outputs, last_state = decoder(decoder_inputs=rnn_inputs_trimmed,
+                                  initial_state=self.initial_state,
+                                  cell=self.lstm_cell,
                                   loop_function=inferred_loop if infer_sample else None)
     # Non inferred outputs
     output = tf.reshape(tf.concat(axis=1, values=outputs), [-1, self.rnn_size])
@@ -170,9 +192,12 @@ class LSTM_Model():
     self.logit_output = tf.matmul(output, W) + b
     self.model_output = tf.nn.softmax(self.logit_output)
 
+    # This loss simply sums up the `nn_ops.sparse_softmax_cross_entropy_with_logits`.
+    # All three lists have just one item, so it's not necessary here.
     loss_fun = tf.contrib.legacy_seq2seq.sequence_loss_by_example
-    loss = loss_fun([self.logit_output], [tf.reshape(self.y_output, [-1])],
-                    [tf.ones([self.batch_size * self.training_seq_len])])
+    loss = loss_fun(logits=[self.logit_output],
+                    targets=[tf.reshape(self.y_output, [-1])],
+                    weights=[tf.ones([self.batch_size * self.training_seq_len])])
     self.cost = tf.reduce_sum(loss) / (self.batch_size * self.training_seq_len)
     self.final_state = last_state
     gradients, _ = tf.clip_by_global_norm(tf.gradients(self.cost, tf.trainable_variables()), 4.5)
