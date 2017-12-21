@@ -7,6 +7,7 @@
 #
 
 from __future__ import print_function
+
 import os
 import re
 import string
@@ -15,6 +16,7 @@ import numpy as np
 import collections
 import random
 import pickle
+
 import matplotlib.pyplot as plt
 import tensorflow as tf
 
