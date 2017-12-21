@@ -134,9 +134,6 @@ class LSTM_Model():
     self.x_data = tf.placeholder(tf.int32, [self.batch_size, self.training_seq_len])
     self.y_output = tf.placeholder(tf.int32, [self.batch_size, self.training_seq_len])
 
-    self.lstm_cell = tf.contrib.rnn.BasicLSTMCell(self.rnn_size)
-    self.initial_state = self.lstm_cell.zero_state(self.batch_size, tf.float32)
-
     with tf.variable_scope('lstm_vars'):
       # Softmax Output Weights
       W = tf.get_variable('W', [self.rnn_size, self.vocab_size], tf.float32, tf.random_normal_initializer())
@@ -163,6 +160,10 @@ class LSTM_Model():
       # Get embedded vector
       output = tf.nn.embedding_lookup(embedding_mat, prev_symbol)
       return output
+
+    # The decoder makes a of basic LSTM cells.
+    self.lstm_cell = tf.contrib.rnn.BasicLSTMCell(self.rnn_size)
+    self.initial_state = self.lstm_cell.zero_state(self.batch_size, tf.float32)
 
     # Notes:
     # Despite the fancy name, this model is not exactly seq2seq. It's just a cool way to
