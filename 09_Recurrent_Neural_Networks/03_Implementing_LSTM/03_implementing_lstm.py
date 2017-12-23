@@ -162,7 +162,7 @@ class LSTM_Model():
       return output
 
     # The decoder makes a of basic LSTM cells.
-    self.lstm_cell = tf.contrib.rnn.BasicLSTMCell(self.rnn_size)
+    self.lstm_cell = tf.contrib.rnn.BasicLSTMCell(num_units=self.rnn_size)
     self.initial_state = self.lstm_cell.zero_state(self.batch_size, tf.float32)
 
     # Notes:
@@ -182,6 +182,9 @@ class LSTM_Model():
     #
     #   Invariant: LSTM output must go through the dense layer before it notes a word.
     #
+    #   BUT: `self.training_seq_len=1` in testing, so this whole mess is actually not used.
+    #        https://github.com/nfmcclure/tensorflow_cookbook/pull/114
+    #
     # One more application of this trick:
     # https://github.com/sherjilozair/char-rnn-tensorflow/blob/master/model.py
     decoder = tf.contrib.legacy_seq2seq.rnn_decoder
@@ -197,6 +200,10 @@ class LSTM_Model():
 
     # This loss simply sums up the `nn_ops.sparse_softmax_cross_entropy_with_logits`.
     # All three lists have just one item, so it's not necessary here.
+    #
+    # By the way, in the older versions of tensorflow (an in the book) it seems to be:
+    # tf.nn.seq2seq.rnn_decoder
+    # tf.nn.seq2seq.sequence_loss_by_example
     loss_fun = tf.contrib.legacy_seq2seq.sequence_loss_by_example
     loss = loss_fun(logits=[self.logit_output],
                     targets=[tf.reshape(self.y_output, [-1])],
@@ -213,16 +220,15 @@ class LSTM_Model():
     for word in word_list[:-1]:
       x = np.zeros((1, 1))
       x[0, 0] = vocab[word]
-      feed_dict = {self.x_data: x, self.initial_state: state}
-      [state] = sess.run([self.final_state], feed_dict=feed_dict)
+      state = sess.run(self.final_state, feed_dict={self.x_data: x, self.initial_state: state})
 
     out_sentence = prime_text
     word = word_list[-1]
     for n in range(num):
       x = np.zeros((1, 1))
       x[0, 0] = vocab[word]
-      feed_dict = {self.x_data: x, self.initial_state: state}
-      [model_output, state] = sess.run([self.model_output, self.final_state], feed_dict=feed_dict)
+      model_output, state = sess.run([self.model_output, self.final_state],
+                                     feed_dict={self.x_data: x, self.initial_state: state})
       sample = np.argmax(model_output[0])
       if sample == 0:
         break
