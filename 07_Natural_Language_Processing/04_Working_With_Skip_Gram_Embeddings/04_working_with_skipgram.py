@@ -67,23 +67,17 @@ def load_movie_data():
           f.write(chunk)
           f.flush()
     # Extract tar.gz file into temp folder
-    tar = tarfile.open('temp_movie_review_temp.tar.gz', "r:gz")
+    tar = tarfile.open('temp_movie_review_temp.tar.gz', 'r:gz')
     tar.extractall(path='temp')
     tar.close()
 
-  pos_data = []
-  with open(pos_file, 'r') as f:
-    for line in f:
-      pos_data.append(line)
-  f.close()
-  pos_data = [x.rstrip() for x in pos_data]
+  with open(pos_file, 'r', errors='replace') as file_:
+    pos_data = file_.readlines()
+    pos_data = [x.rstrip() for x in pos_data]
 
-  neg_data = []
-  with open(neg_file, 'r') as f:
-    for line in f:
-      neg_data.append(line)
-  f.close()
-  neg_data = [x.rstrip() for x in neg_data]
+  with open(neg_file, 'r', errors='replace') as file_:
+    neg_data = file_.readlines()
+    neg_data = [x.rstrip() for x in neg_data]
 
   texts = pos_data + neg_data
   target = [1] * len(pos_data) + [0] * len(neg_data)
@@ -96,15 +90,10 @@ texts, target = load_movie_data()
 
 # Normalize text
 def normalize_text(texts, stops):
-  # Lower case
   texts = [x.lower() for x in texts]
-  # Remove punctuation
   texts = [''.join(c for c in x if c not in string.punctuation) for x in texts]
-  # Remove numbers
   texts = [''.join(c for c in x if c not in '0123456789') for x in texts]
-  # Remove stopwords
   texts = [' '.join([word for word in x.split() if word not in stops]) for x in texts]
-  # Trim extra whitespace
   texts = [' '.join(x.split()) for x in texts]
   return texts
 
