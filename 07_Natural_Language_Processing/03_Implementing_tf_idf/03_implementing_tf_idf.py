@@ -41,10 +41,11 @@ if os.path.isfile(save_file_name):
 else:
   zip_url = 'http://archive.ics.uci.edu/ml/machine-learning-databases/00228/smsspamcollection.zip'
   r = requests.get(zip_url)
-  z = ZipFile(io.BytesIO(r.content))
-  file = z.read('SMSSpamCollection')
-  text_data = file.split('\n')
-  text_data = [x.split('\t') for x in text_data if len(x) >= 1]
+  with ZipFile(io.BytesIO(r.content)) as z:
+    with z.open('SMSSpamCollection', 'r') as file_:
+      text_data = file_.readlines()
+      text_data = [line.decode('utf-8') for line in text_data]
+      text_data = [x.split('\t') for x in text_data if len(x) >= 1]
   with open(save_file_name, 'w') as temp_output_file:
     writer = csv.writer(temp_output_file)
     writer.writerows(text_data)
