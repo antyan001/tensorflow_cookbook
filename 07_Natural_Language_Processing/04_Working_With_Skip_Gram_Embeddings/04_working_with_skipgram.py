@@ -179,14 +179,17 @@ def generate_batch_data(sentences, batch_size, window_size, method='skip_gram'):
       raise ValueError('Method {} not implemented yet.'.format(method))
 
     # `tuple_data` duplicates either x or y to make the list of (x, y) samples.
+    # By the way, the example from the book is wrong (the author tries to describe SG, but talks about CBOW).
     #
     # SG:   (5, 21), (5, 33),
     #       (21, 5), (21, 33), (21, 4406),
     #       (33, 5), (33, 21), (33, 4406), (33, 25), ...
+    #       <center, context>
     #
     # CBOW: (121, 276), (1, 276),
     #       (276, 121), (1, 121), (7146, 121),
     #       (276, 1), (121, 1), (7146, 1), (716, 1), ...
+    #       <context, center>
 
     # extract batch and labels
     batch, labels = [list(x) for x in zip(*tuple_data)]
