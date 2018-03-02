@@ -30,6 +30,12 @@ nltk.data.path.append('/home/maxim/bin/nltk')
 
 os.chdir(os.path.dirname(os.path.realpath(__file__)))
 
+
+########################################################################################################################
+# Data
+########################################################################################################################
+
+
 # Declare model parameters
 batch_size = 100
 embedding_size = 200
@@ -84,9 +90,7 @@ def load_movie_data():
 
   return texts, target
 
-
 texts, target = load_movie_data()
-
 
 # Normalize text
 def normalize_text(texts, stops):
@@ -97,13 +101,11 @@ def normalize_text(texts, stops):
   texts = [' '.join(x.split()) for x in texts]
   return texts
 
-
 texts = normalize_text(texts, stops)
 
 # Texts must contain at least 3 words
 target = [target[ix] for ix, x in enumerate(texts) if len(x.split()) > 2]
 texts = [x for x in texts if len(x.split()) > 2]
-
 
 # Build dictionary of words
 def build_dictionary(sentences, vocabulary_size):
@@ -126,7 +128,6 @@ def build_dictionary(sentences, vocabulary_size):
 
   return word_dict
 
-
 # Turn text data into lists of integers from dictionary
 def text_to_numbers(sentences, word_dict):
   # Initialize the returned data
@@ -143,7 +144,6 @@ def text_to_numbers(sentences, word_dict):
     data.append(sentence_data)
   return data
 
-
 # Build our data set and dictionaries
 word_dictionary = build_dictionary(texts, vocabulary_size)
 word_dictionary_rev = dict(zip(word_dictionary.values(), word_dictionary.keys()))
@@ -151,7 +151,6 @@ text_data = text_to_numbers(texts, word_dictionary)
 
 # Get validation word keys
 valid_examples = [word_dictionary[x] for x in valid_words]
-
 
 # Generate data randomly (N words behind, target, N words ahead)
 def generate_batch_data(sentences, batch_size, window_size, method='skip_gram'):
@@ -194,21 +193,24 @@ def generate_batch_data(sentences, batch_size, window_size, method='skip_gram'):
   return batch_data, label_data
 
 
-# Define Embeddings:
-embeddings = tf.Variable(tf.random_uniform([vocabulary_size, embedding_size], -1.0, 1.0))
+########################################################################################################################
+# Model
+########################################################################################################################
 
-# NCE loss parameters
-nce_weights = tf.Variable(tf.truncated_normal([vocabulary_size, embedding_size],
-                                              stddev=1.0 / np.sqrt(embedding_size)))
-nce_biases = tf.Variable(tf.zeros([vocabulary_size]))
 
 # Create data/target placeholders
 x_inputs = tf.placeholder(tf.int32, shape=[batch_size])
 y_target = tf.placeholder(tf.int32, shape=[batch_size, 1])
 valid_dataset = tf.constant(valid_examples, dtype=tf.int32)
 
-# Lookup the word embedding:
+# Lookup the word embedding
+embeddings = tf.Variable(tf.random_uniform([vocabulary_size, embedding_size], -1.0, 1.0))
 embed = tf.nn.embedding_lookup(embeddings, x_inputs)
+
+# NCE loss parameters
+nce_weights = tf.Variable(tf.truncated_normal([vocabulary_size, embedding_size],
+                                              stddev=1.0 / np.sqrt(embedding_size)))
+nce_biases = tf.Variable(tf.zeros([vocabulary_size]))
 
 # Get loss from prediction
 loss = tf.reduce_mean(tf.nn.nce_loss(weights=nce_weights,
@@ -217,8 +219,6 @@ loss = tf.reduce_mean(tf.nn.nce_loss(weights=nce_weights,
                                      inputs=embed,
                                      num_sampled=num_sampled,
                                      num_classes=vocabulary_size))
-
-# Create optimizer
 optimizer = tf.train.GradientDescentOptimizer(learning_rate=1.0).minimize(loss)
 
 # Cosine similarity between words

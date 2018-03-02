@@ -20,7 +20,11 @@ import requests
 import tensorflow as tf
 from tensorflow.contrib import learn
 
+
+########################################################################################################################
 # Data
+########################################################################################################################
+
 
 # Check if data was downloaded, otherwise download it and save for future use
 save_file_name = os.path.join('temp', 'temp_spam_data.csv')
@@ -86,9 +90,13 @@ texts_test = [x for ix, x in enumerate(texts) if ix in test_indices]
 target_train = [x for ix, x in enumerate(target) if ix in train_indices]
 target_test = [x for ix, x in enumerate(target) if ix in test_indices]
 
+
+########################################################################################################################
 # Model
 # Bag-of-words: feature vector consists of the number of times each token is present:
 # [10, 0, 0, 0, 0, 2, 0, 0, 0, 1, ... ] -> the words are 0, 5 and 9, in any order.
+########################################################################################################################
+
 
 # hard-coded batch_size=1
 x = tf.placeholder(shape=[sentence_size], dtype=tf.int32)

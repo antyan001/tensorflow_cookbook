@@ -23,7 +23,10 @@ import tensorflow as tf
 from sklearn.feature_extraction.text import TfidfVectorizer
 
 
+########################################################################################################################
 # Data
+########################################################################################################################
+
 
 # Check if data was downloaded, otherwise download it and save for future use
 save_file_name = os.path.join('temp', 'temp_spam_data.csv')
@@ -83,7 +86,11 @@ texts_test = sparse_tfidf_texts[test_indices]
 target_train = np.array([x for ix, x in enumerate(target) if ix in train_indices])
 target_test = np.array([x for ix, x in enumerate(target) if ix in test_indices])
 
+
+########################################################################################################################
 # Model
+########################################################################################################################
+
 
 x = tf.placeholder(shape=[None, max_features], dtype=tf.float32)
 y = tf.placeholder(shape=[None, 1], dtype=tf.float32)
