@@ -168,33 +168,48 @@ def generate_batch_data(sentences, batch_size, window_size, method='skip_gram'):
 
     # Pull out center word of interest for each window and create a tuple for each window
     if method == 'skip_gram':
-      batch_and_labels = [(x[y], x[:y] + x[(y + 1):]) for x, y in zip(window_sequences, label_indices)]
+      batch_and_labels = [(words[i], words[:i] + words[(i + 1):]) for words, i in zip(window_sequences, label_indices)]
       # Make it in to a big list of tuples (target word, surrounding word)
       tuple_data = [(x, y_) for x, y in batch_and_labels for y_ in y]
     elif method == 'cbow':
-      batch_and_labels = [(x[:y] + x[(y + 1):], x[y]) for x, y in zip(window_sequences, label_indices)]
+      batch_and_labels = [(words[:i] + words[(i + 1):], words[i]) for words, i in zip(window_sequences, label_indices)]
       # Make it in to a big list of tuples (target word, surrounding word)
       tuple_data = [(x_, y) for x, y in batch_and_labels for x_ in x]
     else:
       raise ValueError('Method {} not implemented yet.'.format(method))
 
+    # `tuple_data` duplicates either x or y to make the list of (x, y) samples.
+    #
+    # SG:   (5, 21), (5, 33),
+    #       (21, 5), (21, 33), (21, 4406),
+    #       (33, 5), (33, 21), (33, 4406), (33, 25), ...
+    #
+    # CBOW: (121, 276), (1, 276),
+    #       (276, 121), (1, 121), (7146, 121),
+    #       (276, 1), (121, 1), (7146, 1), (716, 1), ...
+
     # extract batch and labels
     batch, labels = [list(x) for x in zip(*tuple_data)]
     batch_data.extend(batch[:batch_size])
     label_data.extend(labels[:batch_size])
+
   # Trim batch and label at the end
   batch_data = batch_data[:batch_size]
   label_data = label_data[:batch_size]
 
   # Convert to numpy array
   batch_data = np.array(batch_data)
-  label_data = np.transpose(np.array([label_data]))
+  label_data = np.expand_dims(label_data, axis=1)
 
   return batch_data, label_data
 
 
 ########################################################################################################################
 # Model
+# Both models are identical and differ only in the input pairs (either x or y is reused multiple times).
+# The input indices are passed through an input embedding layer,
+# then the embeddings go through NCE (with an output embedding layer) to compute the loss.
+# It is a classification task to predict one word index given the other.
 ########################################################################################################################
 
 
@@ -208,6 +223,7 @@ embeddings = tf.Variable(tf.random_uniform([vocabulary_size, embedding_size], -1
 embed = tf.nn.embedding_lookup(embeddings, x_inputs)
 
 # NCE loss parameters
+# NOTE: `nce_weights` has the same shape as `embeddings`: the embedding matrix on the other side.
 nce_weights = tf.Variable(tf.truncated_normal([vocabulary_size, embedding_size],
                                               stddev=1.0 / np.sqrt(embedding_size)))
 nce_biases = tf.Variable(tf.zeros([vocabulary_size]))
