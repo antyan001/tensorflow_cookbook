@@ -90,7 +90,10 @@ def load_movie_data():
 
   return texts, target
 
-texts, target = load_movie_data()
+# Load the movie review data:
+# - texts is a list of strings (sentences)
+# - target is a list of 0 or 1 (unused in this example).
+texts, _ = load_movie_data()
 
 # Normalize text
 def normalize_text(texts, stops):
@@ -102,9 +105,6 @@ def normalize_text(texts, stops):
   return texts
 
 texts = normalize_text(texts, stops)
-
-# Texts must contain at least 3 words
-target = [target[ix] for ix, x in enumerate(texts) if len(x.split()) > 2]
 texts = [x for x in texts if len(x.split()) > 2]
 
 # Build dictionary of words
@@ -209,7 +209,9 @@ def generate_batch_data(sentences, batch_size, window_size, method='skip_gram'):
 
 ########################################################################################################################
 # Model
-# Both models are identical and differ only in the input pairs (either x or y is reused multiple times).
+# The input pairs may differ (either x or y is reused multiple times).
+# The model is pure Skip-Gram. In CBOW we would need to add up all embeddings.
+#
 # The input indices are passed through an input embedding layer,
 # then the embeddings go through NCE (with an output embedding layer) to compute the loss.
 # It is a classification task to predict one word index given the other.
