@@ -67,7 +67,7 @@ valid_examples = [word_dictionary[x] for x in valid_words]
 
 
 ########################################################################################################################
-# Model
+# Model: Doc2Vec PV-DM (paragraph vector - distributed memory)
 ########################################################################################################################
 
 
@@ -89,24 +89,23 @@ valid_examples = [word_dictionary[x] for x in valid_words]
 # (i.e. vwI is a concatenated vector containing the document token and several target words).
 # The objective is again to predict a context word given the concatenated document and word vectors..
 
-x_inputs = tf.placeholder(tf.int32, shape=[None, window_size + 1])  # plus 1 for doc index
-y_target = tf.placeholder(tf.int32, shape=[None, 1])
+doc2vec_x = tf.placeholder(tf.int32, shape=[None, window_size + 1])  # plus 1 for doc index
+doc2vec_y = tf.placeholder(tf.int32, shape=[None, 1])
 valid_dataset = tf.constant(valid_examples, dtype=tf.int32)
 
 # Define Embeddings:
 embeddings = tf.Variable(tf.random_uniform([vocabulary_size, embedding_size], -1.0, 1.0))
 doc_embeddings = tf.Variable(tf.random_uniform([len(texts), doc_embedding_size], -1.0, 1.0))
 
-# Lookup the word embedding
-# Add together element embeddings in window:
+# Lookup and add together the word embedding in window
 embed = tf.zeros([batch_size, embedding_size])
 for element in range(window_size):
-  embed += tf.nn.embedding_lookup(embeddings, x_inputs[:, element])
+  embed += tf.nn.embedding_lookup(embeddings, doc2vec_x[:, element])
 
-doc_indices = tf.slice(x_inputs, [0, window_size], [batch_size, 1])
+doc_indices = tf.slice(doc2vec_x, [0, window_size], [batch_size, 1])
 doc_embed = tf.nn.embedding_lookup(doc_embeddings, doc_indices)
 
-# concatenate embeddings
+# Concatenate embeddings (here can also be the sum)
 final_embed = tf.concat(axis=1, values=[embed, tf.squeeze(doc_embed)])
 
 # Get loss from prediction
@@ -115,7 +114,7 @@ nce_weights = tf.Variable(tf.truncated_normal([vocabulary_size, concatenated_siz
 nce_biases = tf.Variable(tf.zeros([vocabulary_size]))
 loss = tf.reduce_mean(tf.nn.nce_loss(weights=nce_weights,
                                      biases=nce_biases,
-                                     labels=y_target,
+                                     labels=doc2vec_y,
                                      inputs=final_embed,
                                      num_sampled=num_sampled,
                                      num_classes=vocabulary_size))
@@ -128,20 +127,18 @@ normalized_embeddings = embeddings / norm
 valid_embeddings = tf.nn.embedding_lookup(normalized_embeddings, valid_dataset)
 similarity = tf.matmul(valid_embeddings, normalized_embeddings, transpose_b=True)
 
+saver = tf.train.Saver({'embeddings': embeddings, 'doc_embeddings': doc_embeddings})
+embeddings_checkpoint_path = os.path.join(os.getcwd(), tmp_dir, 'doc2vec_movie_embeddings.ckpt')
 with tf.Session() as sess:
-  saver = tf.train.Saver({"embeddings": embeddings, "doc_embeddings": doc_embeddings})
-
-  # Add variable initializer.
   sess.run(tf.global_variables_initializer())
 
-  # Run the doc2vec model.
-  print('Starting Training')
+  print('Starting Training Doc2Vec')
   loss_vec = []
   loss_x_vec = []
   for i in range(generations):
     batch_inputs, batch_labels = text_helpers.generate_batch_data(text_data, batch_size,
                                                                   window_size, method='doc2vec')
-    feed_dict = {x_inputs: batch_inputs, y_target: batch_labels}
+    feed_dict = {doc2vec_x: batch_inputs, doc2vec_y: batch_labels}
 
     # Run the train step
     sess.run(train_step, feed_dict=feed_dict)
@@ -173,11 +170,15 @@ with tf.Session() as sess:
         pickle.dump(word_dictionary, f)
 
       # Save embeddings
-      model_checkpoint_path = os.path.join(os.getcwd(), tmp_dir, 'doc2vec_movie_embeddings.ckpt')
-      save_path = saver.save(sess, model_checkpoint_path)
+      save_path = saver.save(sess, embeddings_checkpoint_path)
       print('Model saved in file: {}'.format(save_path))
 
-# Start logistic model-------------------------
+
+########################################################################################################################
+# Data preparation: Sentiment analysis using Doc2Vec embeddings
+########################################################################################################################
+
+
 max_words = 20
 logistic_batch_size = 500
 
@@ -198,48 +199,43 @@ text_data_test = np.array(text_helpers.text_to_numbers(texts_test, word_dictiona
 text_data_train = np.array([x[0:max_words] for x in [y + [0] * max_words for y in text_data_train]])
 text_data_test = np.array([x[0:max_words] for x in [y + [0] * max_words for y in text_data_test]])
 
-# Define Logistic placeholders
-log_x_inputs = tf.placeholder(tf.int32, shape=[None, max_words + 1])  # plus 1 for doc index
-log_y_target = tf.placeholder(tf.int32, shape=[None, 1])
+
+########################################################################################################################
+# Model
+########################################################################################################################
+
+
+sentim_x = tf.placeholder(tf.int32, shape=[None, max_words + 1])  # plus 1 for doc index
+sentim_y = tf.placeholder(tf.int32, shape=[None, 1])
 
 # Define logistic embedding lookup (needed if we have two different batch sizes)
 # Add together element embeddings in window:
-log_embed = tf.zeros([logistic_batch_size, embedding_size])
+sentim_embed = tf.zeros([logistic_batch_size, embedding_size])
 for element in range(max_words):
-  log_embed += tf.nn.embedding_lookup(embeddings, log_x_inputs[:, element])
+  sentim_embed += tf.nn.embedding_lookup(embeddings, sentim_x[:, element])
 
-log_doc_indices = tf.slice(log_x_inputs, [0, max_words], [logistic_batch_size, 1])
-log_doc_embed = tf.nn.embedding_lookup(doc_embeddings, log_doc_indices)
-
-# concatenate embeddings
-log_final_embed = tf.concat(axis=1, values=[log_embed, tf.squeeze(log_doc_embed)])
+sentim_doc_indices = tf.slice(sentim_x, [0, max_words], [logistic_batch_size, 1])
+sentim_doc_embed = tf.nn.embedding_lookup(doc_embeddings, sentim_doc_indices)
+sentim_final_embed = tf.concat(axis=1, values=[sentim_embed, tf.squeeze(sentim_doc_embed)])
 
 # Define model:
-# Create variables for logistic regression
-A = tf.Variable(tf.random_normal(shape=[concatenated_size, 1]))
+W = tf.Variable(tf.random_normal(shape=[concatenated_size, 1]))
 b = tf.Variable(tf.random_normal(shape=[1, 1]))
-
-# Declare logistic model (sigmoid in loss function)
-model_output = tf.add(tf.matmul(log_final_embed, A), b)
+model_output = tf.add(tf.matmul(sentim_final_embed, W), b)
 
 # Declare loss function (Cross Entropy loss)
 logistic_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=model_output,
-                                                                       labels=tf.cast(log_y_target, tf.float32)))
-
-# Actual Prediction
+                                                                       labels=tf.cast(sentim_y, tf.float32)))
 prediction = tf.round(tf.sigmoid(model_output))
-predictions_correct = tf.cast(tf.equal(prediction, tf.cast(log_y_target, tf.float32)), tf.float32)
+predictions_correct = tf.cast(tf.equal(prediction, tf.cast(sentim_y, tf.float32)), tf.float32)
 accuracy = tf.reduce_mean(predictions_correct)
-
-# Declare optimizer
-logistic_opt = tf.train.GradientDescentOptimizer(learning_rate=0.01)
-logistic_train_step = logistic_opt.minimize(logistic_loss, var_list=[A, b])
+sentim_train_op = tf.train.GradientDescentOptimizer(learning_rate=0.01).minimize(logistic_loss, var_list=[W, b])
 
 with tf.Session() as sess:
   sess.run(tf.global_variables_initializer())
+  saver.restore(sess, embeddings_checkpoint_path)
 
-  # Start Logistic Regression
-  print('Starting Logistic Doc2Vec Model Training')
+  print('Starting Logistic Model Training')
   train_loss = []
   test_loss = []
   train_acc = []
@@ -253,8 +249,8 @@ with tf.Session() as sess:
     rand_x = np.hstack((rand_x, np.transpose([rand_x_doc_indices])))
     rand_y = np.transpose([target_train[rand_index]])
 
-    feed_dict = {log_x_inputs: rand_x, log_y_target: rand_y}
-    sess.run(logistic_train_step, feed_dict=feed_dict)
+    feed_dict = {sentim_x: rand_x, sentim_y: rand_y}
+    sess.run(sentim_train_op, feed_dict=feed_dict)
 
     # Only record loss and accuracy every 100 generations
     if (i + 1) % 100 == 0:
@@ -265,7 +261,7 @@ with tf.Session() as sess:
       rand_x_test = np.hstack((rand_x_test, np.transpose([rand_x_doc_indices_test])))
       rand_y_test = np.transpose([target_test[rand_index_test]])
 
-      test_feed_dict = {log_x_inputs: rand_x_test, log_y_target: rand_y_test}
+      test_feed_dict = {sentim_x: rand_x_test, sentim_y: rand_y_test}
 
       i_data.append(i + 1)
 
@@ -283,8 +279,7 @@ with tf.Session() as sess:
     if (i + 1) % 500 == 0:
       acc_and_loss = [i + 1, train_loss_temp, test_loss_temp, train_acc_temp, test_acc_temp]
       acc_and_loss = [np.round(x, 2) for x in acc_and_loss]
-      print('Generation # {}. Train Loss (Test Loss): {:.2f} ({:.2f}). Train Acc (Test Acc): {:.2f} ({:.2f})'.format(
-        *acc_and_loss))
+      print('Generation # {}. Train Loss (Test Loss): {:.2f} ({:.2f}). Train Acc (Test Acc): {:.2f} ({:.2f})'.format(*acc_and_loss))
 
 # Plot loss over time
 plt.plot(i_data, train_loss, 'k-', label='Train Loss')

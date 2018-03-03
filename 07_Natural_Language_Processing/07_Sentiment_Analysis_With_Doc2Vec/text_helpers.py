@@ -154,6 +154,10 @@ def generate_batch_data(sentences, batch_size, window_size, method='skip_gram'):
     #       but using vector(s) for the text-as-a-whole to predict target words,
     #       rather than just vector(s) for nearby-words...
     #       so it is very easy to combine with skip-gram word training, if you need the word-vectors too.
+    #
+    # rem:  PV-DBOW does not use a sliding context window, 
+    #       instead all words from the sentence are considered as context.
+    #
 
     # extract batch and labels
     batch_data.extend(batch[:batch_size])
